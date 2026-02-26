@@ -37,9 +37,9 @@ void withdrawal_unsafe(int account_id, double amount) {
     accounts[account_id].transaction_count++; // Increment the transaction count of the account
 }
 
-void transfer_unsafe(int source_idx, int destination_idx, double amount) {
-	withdrawal_unsafe(source_idx, amount);
-	deposit_unsafe(destination_idx, amount);
+void transfer_unsafe(int source_id, int destination_id, double amount) {
+	withdrawal_unsafe(source_id, amount);
+	deposit_unsafe(destination_id, amount);
 }
 
 void* teller_thread(void* arg) {
@@ -49,25 +49,25 @@ void* teller_thread(void* arg) {
 
 	for (int i = 0; i < TRANSACTIONS_PER_THREAD; i++) {
 
-		int source_idx = rand_r(&seed) % NUM_ACCOUNTS;
-		int destination_idx = rand_r(&seed) % NUM_ACCOUNTS;
-		while (source_idx == destination_idx){
-			destination_idx = rand_r(&seed) % NUM_ACCOUNTS;
+		int source_id = rand_r(&seed) % NUM_ACCOUNTS;
+		int destination_id = rand_r(&seed) % NUM_ACCOUNTS;
+		while (source_id == destination_id){
+			destination_id = rand_r(&seed) % NUM_ACCOUNTS;
 		}
 
 		double amount = (rand_r(&seed) % 100) + 1; // Generate random amount between 1 and 100 using rand_r(&seed), so that seed is changed after each random operation
 
-		transfer_unsafe(source_idx, destination_idx, amount);
-		printf("Teller %d: Transfered $%.2f from Account %d to Account %d\n", teller_id, amount, source_idx, destination_idx);
+		transfer_unsafe(source_id, destination_id, amount);
+		printf("Teller %d: Transfered $%.2f from Account %d to Account %d\n", teller_id, amount, source_id, destination_id);
 
 		// if (operation == 1) {
-		// deposit_unsafe(account_idx, amount);
+		// deposit_unsafe(account_id, amount);
 		// printf("Teller %d: Deposited $%.2f to Account %d\n",
-		// 	teller_id, amount, account_idx);
+		// 	teller_id, amount, account_id);
 		// } else {
-        // withdrawal_unsafe(account_idx, amount); // Call withdrawal_unsafe
+        // withdrawal_unsafe(account_id, amount); // Call withdrawal_unsafe
         // printf("Teller %d: Withdrew $%.2f from Account %d\n", // Print withdrawal statement
-        //     teller_id, amount, account_idx);
+        //     teller_id, amount, account_id);
 		// }
 	}
 
@@ -76,6 +76,9 @@ void* teller_thread(void* arg) {
 
 int main() {
 	printf("=== Phase 1: Race Conditions Demo ===\n\n");
+	
+	struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (int i = 0; i < NUM_ACCOUNTS; i++) { // Iterate through accounts array
 		accounts[i].account_id = i; // Initialize the accounts
@@ -115,8 +118,14 @@ int main() {
 			exit(1);
 		}
 	}
+	clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) +
+                     (end.tv_nsec - start.tv_nsec) / 1e9;
 
 	printf("\n=== Final Results ===\n");
+
+	printf("\nTime: %.4f seconds\n\n", elapsed);
+
 	double actual_total = 0.0;
 
 	for (int i = 0; i < NUM_ACCOUNTS; i++) {
