@@ -23,7 +23,7 @@ Account accounts[NUM_ACCOUNTS];
 
 void deposit_unsafe(int account_id, double amount) {
 	double current_balance = accounts[account_id].balance;
-	//usleep(1);
+	usleep(1);
 	double new_balance = current_balance + amount;
 	accounts[account_id].balance = new_balance;
 	accounts[account_id].transaction_count++;
@@ -31,7 +31,7 @@ void deposit_unsafe(int account_id, double amount) {
 
 void withdrawal_unsafe(int account_id, double amount) {
     double current_balance = accounts[account_id].balance; // Set current balance as the balance of the account specified
-    //usleep(1); // Simulate processing time
+    usleep(1); // Simulate processing time
     double new_balance = current_balance - amount; // Subtract the amount from current balance to get the new_balance
     accounts[account_id].balance = new_balance; // Set the account's balance value to the value of new_balance
     accounts[account_id].transaction_count++; // Increment the transaction count of the account
