@@ -10,9 +10,9 @@
 #include <errno.h>
 #include <string.h>
 
-#define NUM_ACCOUNTS 4
-#define NUM_THREADS 4
-#define TRANSACTIONS_PER_THREAD 10
+#define NUM_ACCOUNTS 10
+#define NUM_THREADS 8
+#define TRANSACTIONS_PER_THREAD 20
 #define INITIAL_BALANCE 1000.0
 
 // Updated Account structure with mutex (GIVEN)
@@ -89,7 +89,7 @@ void cleanup_mutexes() {
 
 
 int main(){
-    printf("=== Phase 1: Race Conditions Demo ===\n\n");
+    printf("=== Phase 2: Race Conditions Demo ===\n\n");
 
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
@@ -156,7 +156,7 @@ int main(){
 	if (expected_total != actual_total){
 		printf("RACE CONDITION DETECTED!\n");
 	} else{
-		printf("NO RACE CONDITION DETECTED");
+		printf("NO RACE CONDITION DETECTED\n");
 	}
 	printf("Run program again to test for different results.\n");
 
