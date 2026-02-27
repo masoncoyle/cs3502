@@ -10,7 +10,7 @@
 #include <errno.h>
 #include <string.h>
 
-#define NUM_ACCOUNTS 4
+#define NUM_ACCOUNTS 2
 #define NUM_THREADS 4
 #define TRANSACTIONS_PER_THREAD 10
 #define INITIAL_BALANCE 1000.0
@@ -37,19 +37,13 @@ void initialize_accounts() {
     }
 }
 
-void deposit(int account_id, double amount){
-	accounts[account_id].balance += amount;
-	accounts[account_id].transaction_count++;
-}
-void withdraw(int account_id, double amount){
-	accounts[account_id].balance -= amount;
-	accounts[account_id].transaction_count++;
-}
 void transfer_safe(int source_id, int destination_id, double amount){
 	pthread_mutex_lock(&accounts[source_id].lock);
 	pthread_mutex_lock(&accounts[destination_id].lock);
-	withdraw(source_id, amount);
-	deposit(destination_id, amount);
+	accounts[source_id].balance -= amount;
+	accounts[source_id].transaction_count++;
+	accounts[destination_id].balance += amount;
+	accounts[destination_id].transaction_count++;
 	pthread_mutex_unlock(&accounts[source_id].lock);
 	pthread_mutex_unlock(&accounts[destination_id].lock);
 }
@@ -91,14 +85,7 @@ void cleanup_mutexes() {
 int main(){
     printf("=== Phase 2: Mutex Protection Demo ===\n\n");
 
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    for (int i = 0; i < NUM_ACCOUNTS; i++) {
-		accounts[i].account_id = i;
-		accounts[i].balance = INITIAL_BALANCE;
-		accounts[i].transaction_count = 0;
-	}
+	initialize_accounts();
 
 	printf("Initial State:\n");
 	for (int i = 0; i < NUM_ACCOUNTS; i++) {
@@ -114,19 +101,21 @@ int main(){
 
 	int result;
 
+	struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
 	for (int i = 0; i < NUM_THREADS; i++) {
 		thread_ids[i] = i;
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]);
-		if (result == 1){
+		if (result != 0){
 			printf("Error when creating thread.");
 			exit(1);
 		}
-	
 	}
 
 	for (int i = 0; i < NUM_THREADS; i++) {
 		result = pthread_join(threads[i], NULL);
-		if (result == 1){
+		if (result != 0){
 			printf("Error when joining thread.");
 			exit(1);
 		}
