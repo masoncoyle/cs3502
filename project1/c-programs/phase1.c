@@ -8,9 +8,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#define NUM_ACCOUNTS 10
-#define NUM_THREADS 8
-#define TRANSACTIONS_PER_THREAD 20
+#define NUM_ACCOUNTS 2
+#define NUM_THREADS 4
+#define TRANSACTIONS_PER_THREAD 10
 #define INITIAL_BALANCE 1000.0
 
 typedef struct {
@@ -77,8 +77,6 @@ void* teller_thread(void* arg) {
 int main() {
 	printf("=== Phase 1: Race Conditions Demo ===\n\n");
 	
-	struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (int i = 0; i < NUM_ACCOUNTS; i++) { // Iterate through accounts array
 		accounts[i].account_id = i; // Initialize the accounts
@@ -101,6 +99,10 @@ int main() {
 	int thread_ids[NUM_THREADS]; // GIVEN: Separate array for IDs
 
 	int result; // Variable used for checking if threads are created and joined successfully
+
+	struct timespec start, end; // Start Timer
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
 	for (int i = 0; i < NUM_THREADS; i++) {
 		thread_ids[i] = i; // GIVEN: Store ID persistently
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]); // Initialize each thread
