@@ -100,9 +100,6 @@ int main() {
 
 	int result; // Variable used for checking if threads are created and joined successfully
 
-	struct timespec start, end; // Start Timer
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
 	for (int i = 0; i < NUM_THREADS; i++) {
 		thread_ids[i] = i; // GIVEN: Store ID persistently
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]); // Initialize each thread
@@ -110,8 +107,10 @@ int main() {
 			printf("Error when creating thread.");
 			exit(1);
 		}
-	
 	}
+
+	struct timespec start, end; // Start Timer
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (int i = 0; i < NUM_THREADS; i++) {
 		result = pthread_join(threads[i], NULL); // Join each thread

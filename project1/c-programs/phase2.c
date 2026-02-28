@@ -101,9 +101,6 @@ int main(){
 
 	int result;
 
-	struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
 	for (int i = 0; i < NUM_THREADS; i++) {
 		thread_ids[i] = i;
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]);
@@ -113,6 +110,9 @@ int main(){
 		}
 	}
 
+	struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
 	for (int i = 0; i < NUM_THREADS; i++) {
 		result = pthread_join(threads[i], NULL);
 		if (result != 0){
@@ -120,11 +120,13 @@ int main(){
 			exit(1);
 		}
 	}
-    cleanup_mutexes();
 
-    clock_gettime(CLOCK_MONOTONIC, &end);
+	clock_gettime(CLOCK_MONOTONIC, &end);
     double elapsed = (end.tv_sec - start.tv_sec) +
                      (end.tv_nsec - start.tv_nsec) / 1e9;
+
+    cleanup_mutexes();
+
     
 
 	printf("\n=== Final Results ===\n");
