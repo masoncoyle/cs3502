@@ -10,9 +10,9 @@
 #include <errno.h>
 #include <string.h>
 
-#define NUM_ACCOUNTS 2
+#define NUM_ACCOUNTS 8
 #define NUM_THREADS 4
-#define TRANSACTIONS_PER_THREAD 10
+#define TRANSACTIONS_PER_THREAD 2
 #define INITIAL_BALANCE 1000.0
 
 typedef struct {
@@ -38,26 +38,55 @@ void initialize_accounts() {
     }
 }
 
-void transfer(int from_id, int to_id, double amount){
-    pthread_mutex_lock(&accounts[from_id].lock);
-    printf("Thread %ld: Locked account %d\n", pthread_self(), from_id);
-    int result = check_balance(from_id, amount);
-    if (result != 0){
-        pthread_mutex_unlock(&accounts[from_id].lock);
-        printf("Account %d has an insufficient balance, transfer with Account %d cancelled", from_id, to_id);
+
+void transfer(int teller_id, int source_id, int destination_id, double amount){
+    if (source_id < destination_id){
+        pthread_mutex_lock(&accounts[source_id].lock);
+        printf("Thread %d: Locked account %d\n", teller_id, source_id);
+        usleep(100);
+        printf("Thread %d: Waiting for account %d\n", teller_id, destination_id);
+        pthread_mutex_lock(&accounts[destination_id].lock);
+        printf("Thread %d: Locked account %d\n", teller_id, destination_id);
+    } else {
+        pthread_mutex_lock(&accounts[destination_id].lock);
+        printf("Thread %d: Locked account %d\n", teller_id, destination_id);
+        usleep(100);
+        printf("Thread %d: Waiting for account %d\n", teller_id, source_id);
+        pthread_mutex_lock(&accounts[source_id].lock);
+        printf("Thread %d: Locked account %d\n", teller_id, source_id);
+    }
+
+    if (accounts[source_id].balance < amount){
+        if (source_id < destination_id){
+        pthread_mutex_unlock(&accounts[destination_id].lock);
+        pthread_mutex_unlock(&accounts[source_id].lock);
+        
+    } else {
+        pthread_mutex_unlock(&accounts[source_id].lock);
+        pthread_mutex_unlock(&accounts[destination_id].lock);
+    }
+        printf("Thread %d, Account %d has an insufficient balance, transfer with Account %d cancelled\n", teller_id,source_id, destination_id);
         return;
     }
-    usleep(100);
-    printf("Thread %ld: Waiting for account %d\n", pthread_self(), to_id);
-    pthread_mutex_lock(&accounts[to_id].lock);
-    accounts[from_id].balance -= amount;
-    accounts[to_id].balance += amount;
-    pthread_mutex_unlock(&accounts[to_id].lock);
-    pthread_mutex_unlock(&accounts[from_id].lock);
+
+    accounts[source_id].balance -= amount;
+    accounts[destination_id].balance += amount;
+    accounts[source_id].transaction_count++;
+    accounts[destination_id].transaction_count++;
+
+    if (source_id < destination_id){
+        pthread_mutex_unlock(&accounts[destination_id].lock);
+        pthread_mutex_unlock(&accounts[source_id].lock);
+        
+    } else {
+        pthread_mutex_unlock(&accounts[source_id].lock);
+        pthread_mutex_unlock(&accounts[destination_id].lock);
+    }
+    printf("Thread %d: Transfered $%.2f from Account %d to Account %d - Accounts %d and %d unlocked.\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
 }
 
 void* teller_thread(void* arg) {
-	int teller_id = *(int*)arg;
+    int teller_id = *(int*)arg;
 	unsigned int seed = time(NULL) ^ pthread_self();
 	for (int i = 0; i < TRANSACTIONS_PER_THREAD; i++) {
 		int source_id = rand_r(&seed) % NUM_ACCOUNTS;
@@ -66,8 +95,7 @@ void* teller_thread(void* arg) {
 			destination_id = rand_r(&seed) % NUM_ACCOUNTS;
 		}
 		double amount = (rand_r(&seed) % 100) + 1;
-		transfer(source_id, destination_id, amount);
-		printf("Teller %d: Transfered $%.2f from Account %d to Account %d\n", teller_id, amount, source_id, destination_id);
+		transfer(teller_id, source_id, destination_id, amount);
 	}
     pthread_mutex_lock(&threads_executed_mutex);
     threads_executed ++;
@@ -96,6 +124,9 @@ int main(){
 
 	int result;
 
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
 	for (int i = 0; i < NUM_THREADS; i++) {
 		thread_ids[i] = i;
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]);
@@ -106,16 +137,15 @@ int main(){
 	}
 
     time_t start_time = time(NULL);
-    time_t elapsed = 0;
+    time_t timeout_elapsed = 0;
     while (1){
         sleep(1);
-        elapsed = time(NULL) - start_time;
-        if (elapsed >= 5){
+        timeout_elapsed = time(NULL) - start_time;
+        if (timeout_elapsed >= 5){
             printf("\nPossible deadlock found, no progress for 5 seconds, program terminated...\n");
             exit(1);
         }
         if (threads_executed == NUM_THREADS){
-            printf("No deadlock found...\n");
             break;
         }
     }
@@ -128,10 +158,17 @@ int main(){
 			exit(1);
 		}
 	}
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) +
+                     (end.tv_nsec - start.tv_nsec) / 1e9;
+
     cleanup_mutexes();
-    
+
+    timeout_elapsed = time(NULL) - start_time;
 
 	printf("\n=== Final Results ===\n");
+    printf("\nExecution time: %.4f seconds\n\n", elapsed);
+
 
 	double actual_total = 0.0;
 
@@ -146,10 +183,11 @@ int main(){
 	printf("Difference: $%.2f\n", actual_total - expected_total);
 
 	if (expected_total != actual_total){
-		printf("RACE CONDITION DETECTED!\n");
+		printf("\nRACE CONDITION DETECTED!\n");
 	} else{
-		printf("NO RACE CONDITION DETECTED\n");
+		printf("\nNO RACE CONDITION DETECTED\n");
 	}
+    printf("\nNO DEADLOCK DETECTED\n\n");
 	printf("Run program again to test for different results.\n");
 
 	return 0;
