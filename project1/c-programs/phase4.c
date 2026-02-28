@@ -10,10 +10,11 @@
 #include <errno.h>
 #include <string.h>
 
-#define NUM_ACCOUNTS 8
-#define NUM_THREADS 4
-#define TRANSACTIONS_PER_THREAD 2
+#define NUM_ACCOUNTS 4
+#define NUM_THREADS 6
+#define TRANSACTIONS_PER_THREAD 4
 #define INITIAL_BALANCE 1000.0
+#define TRANSFER_METHOD 1 //Set to 0 to use Time Ordering or set to 1 to use Timeout Mechanism for Deadlock Resolution
 
 typedef struct {
     int account_id;
@@ -39,7 +40,7 @@ void initialize_accounts() {
 }
 
 
-void transfer(int teller_id, int source_id, int destination_id, double amount){
+void safe_transfer_ordered(int teller_id, int source_id, int destination_id, double amount){ // Transfer function implemented with Lock Ordering
     if (source_id < destination_id){
         pthread_mutex_lock(&accounts[source_id].lock);
         printf("Thread %d: Locked account %d\n", teller_id, source_id);
@@ -85,6 +86,56 @@ void transfer(int teller_id, int source_id, int destination_id, double amount){
     printf("Thread %d: Transfered $%.2f from Account %d to Account %d - Accounts %d and %d unlocked.\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
 }
 
+
+void safe_transfer_timeout(int teller_id, int source_id, int destination_id, double amount){ // Transfer function implemented with Timeout Mechanism
+    struct timespec timeout;
+    while (1) {
+        clock_gettime(CLOCK_REALTIME, &timeout);
+        timeout.tv_sec += 2;
+        if (pthread_mutex_timedlock(&accounts[source_id].lock, &timeout) == 0){
+            clock_gettime(CLOCK_REALTIME, &timeout);
+            timeout.tv_sec += 2;
+            printf("Thread %d: Locked account %d\n", teller_id, source_id);
+            usleep(100);
+            printf("Thread %d: Waiting for account %d\n", teller_id, destination_id);
+            if (pthread_mutex_timedlock(&accounts[destination_id].lock, &timeout) == 0){
+                break;
+            }
+            printf("Thread %d timed out while waiting to lock Account %d\n", teller_id, destination_id);
+            pthread_mutex_unlock(&accounts[source_id].lock);
+            usleep(rand() % 10000);
+            continue;
+        }
+        printf("Thread %d timed out while waiting to lock Account %d\n", teller_id, source_id);
+    }
+    // while (1) {
+    //     clock_gettime(CLOCK_REALTIME, &timeout);
+    //     timeout.tv_sec += 2;
+    //     int result = pthread_mutex_timedlock(&accounts[destination_id].lock, &timeout);
+    //     if (result == 0){
+    //         break;
+    //     }
+    //     printf("Thread %d timed out while waiting to lock Account %d\n", teller_id, destination_id);
+    // }
+    
+    if (accounts[source_id].balance < amount){
+        pthread_mutex_unlock(&accounts[destination_id].lock);
+        pthread_mutex_unlock(&accounts[source_id].lock);
+        printf("\nAccount %d has an insufficient balance, transfer with Account %d cancelled\n", source_id, destination_id);
+        return;
+    }
+    
+    accounts[source_id].balance -= amount;
+    accounts[destination_id].balance += amount;
+    accounts[source_id].transaction_count++;
+    accounts[destination_id].transaction_count++;
+
+    pthread_mutex_unlock(&accounts[destination_id].lock);
+    pthread_mutex_unlock(&accounts[source_id].lock);
+
+    printf("Thread %d: Transfered $%.2f from Account %d to Account %d - Accounts %d and %d unlocked.\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
+}
+
 void* teller_thread(void* arg) {
     int teller_id = *(int*)arg;
 	unsigned int seed = time(NULL) ^ pthread_self();
@@ -95,7 +146,11 @@ void* teller_thread(void* arg) {
 			destination_id = rand_r(&seed) % NUM_ACCOUNTS;
 		}
 		double amount = (rand_r(&seed) % 100) + 1;
-		transfer(teller_id, source_id, destination_id, amount);
+        if (TRANSFER_METHOD == 0){
+            safe_transfer_ordered(teller_id, source_id, destination_id, amount);
+        } else{
+            safe_transfer_timeout(teller_id, source_id, destination_id, amount);
+        }
 	}
     pthread_mutex_lock(&threads_executed_mutex);
     threads_executed ++;
@@ -124,20 +179,22 @@ int main(){
 
 	int result;
 
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (int i = 0; i < NUM_THREADS; i++) {
 		thread_ids[i] = i;
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]);
-		if (result == 1){
+		if (result != 0){
 			printf("Error when creating thread.\n");
 			exit(1);
 		}
 	}
 
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     time_t start_time = time(NULL);
     time_t timeout_elapsed = 0;
+
     while (1){
         sleep(1);
         timeout_elapsed = time(NULL) - start_time;
@@ -153,7 +210,7 @@ int main(){
 
 	for (int i = 0; i < NUM_THREADS; i++) { // Join threads
 		result = pthread_join(threads[i], NULL);
-		if (result == 1){
+		if (result != 0){
 			printf("Error when joining thread.\n");
 			exit(1);
 		}
@@ -163,8 +220,6 @@ int main(){
                      (end.tv_nsec - start.tv_nsec) / 1e9;
 
     cleanup_mutexes();
-
-    timeout_elapsed = time(NULL) - start_time;
 
 	printf("\n=== Final Results ===\n");
     printf("\nExecution time: %.4f seconds\n\n", elapsed);
@@ -187,7 +242,7 @@ int main(){
 	} else{
 		printf("\nNO RACE CONDITION DETECTED\n");
 	}
-    printf("\nNO DEADLOCK DETECTED\n\n");
+
 	printf("Run program again to test for different results.\n");
 
 	return 0;
