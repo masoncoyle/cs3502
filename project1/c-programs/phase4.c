@@ -11,8 +11,8 @@
 #include <string.h>
 
 #define NUM_ACCOUNTS 4
-#define NUM_THREADS 6
-#define TRANSACTIONS_PER_THREAD 4
+#define NUM_THREADS 4
+#define TRANSACTIONS_PER_THREAD 2
 #define INITIAL_BALANCE 1000.0
 #define TRANSFER_METHOD 1 //Set to 0 to use Time Ordering or set to 1 to use Timeout Mechanism for Deadlock Resolution
 
@@ -26,7 +26,7 @@ typedef struct {
 Account accounts[NUM_ACCOUNTS];
 
 int threads_executed = 0; 
-pthread_mutex_t threads_executed_mutex; 
+pthread_mutex_t threads_executed_mutex;
 
 void initialize_accounts() {
     for (int i = 0; i < NUM_ACCOUNTS; i++) {
@@ -39,32 +39,43 @@ void initialize_accounts() {
     }
 }
 
+time_t last_progress;
+pthread_mutex_t last_progress_mutex;
+
+void update_progress(){
+    pthread_mutex_lock(&last_progress_mutex);
+    last_progress = time(NULL);
+    pthread_mutex_unlock(&last_progress_mutex);
+}
+
 
 void safe_transfer_ordered(int teller_id, int source_id, int destination_id, double amount){ // Transfer function implemented with Lock Ordering
     if (source_id < destination_id){
         pthread_mutex_lock(&accounts[source_id].lock);
-        printf("Thread %d: Locked account %d\n", teller_id, source_id);
+        printf("\033[92mThread %d: Locked account %d\033[0m\n", teller_id, source_id);
         usleep(100);
-        printf("Thread %d: Waiting for account %d\n", teller_id, destination_id);
+        printf("\033[94mThread %d: Waiting for account %d\033[0m\n", teller_id, destination_id);
         pthread_mutex_lock(&accounts[destination_id].lock);
-        printf("Thread %d: Locked account %d\n", teller_id, destination_id);
+        printf("\033[92mThread %d: Locked account %d\033[0m\n", teller_id, destination_id);
     } else {
         pthread_mutex_lock(&accounts[destination_id].lock);
-        printf("Thread %d: Locked account %d\n", teller_id, destination_id);
+        printf("\033[92mThread %d: Locked account %d\033[0m\n", teller_id, destination_id);
         usleep(100);
-        printf("Thread %d: Waiting for account %d\n", teller_id, source_id);
+        printf("\033[94mThread %d: Waiting for account %d\033[0m\n", teller_id, source_id);
         pthread_mutex_lock(&accounts[source_id].lock);
-        printf("Thread %d: Locked account %d\n", teller_id, source_id);
+        printf("\033[92mThread %d: Locked account %d\033[0m\n", teller_id, source_id);
     }
 
     if (accounts[source_id].balance < amount){
         if (source_id < destination_id){
         pthread_mutex_unlock(&accounts[destination_id].lock);
         pthread_mutex_unlock(&accounts[source_id].lock);
+        update_progress();
         
     } else {
         pthread_mutex_unlock(&accounts[source_id].lock);
         pthread_mutex_unlock(&accounts[destination_id].lock);
+        update_progress();
     }
         printf("Thread %d, Account %d has an insufficient balance, transfer with Account %d cancelled\n", teller_id,source_id, destination_id);
         return;
@@ -78,16 +89,18 @@ void safe_transfer_ordered(int teller_id, int source_id, int destination_id, dou
     if (source_id < destination_id){
         pthread_mutex_unlock(&accounts[destination_id].lock);
         pthread_mutex_unlock(&accounts[source_id].lock);
+        update_progress();
         
     } else {
         pthread_mutex_unlock(&accounts[source_id].lock);
         pthread_mutex_unlock(&accounts[destination_id].lock);
+        update_progress();
     }
-    printf("Thread %d: Transfered $%.2f from Account %d to Account %d - Accounts %d and %d unlocked.\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
+    printf("\033[1mThread %d: Transfered $%.2f from Account %d to Account %d \033[96m- Accounts %d and %d unlocked.\033[0m\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
 }
 
 
-void safe_transfer_timeout(int teller_id, int source_id, int destination_id, double amount){ // Transfer function implemented with Timeout Mechanism
+void safe_transfer_timeout(int teller_id, unsigned int *seed, int source_id, int destination_id, double amount){ // Transfer function implemented with Timeout Mechanism
     struct timespec timeout;
     while (1) {
         clock_gettime(CLOCK_REALTIME, &timeout);
@@ -95,32 +108,25 @@ void safe_transfer_timeout(int teller_id, int source_id, int destination_id, dou
         if (pthread_mutex_timedlock(&accounts[source_id].lock, &timeout) == 0){
             clock_gettime(CLOCK_REALTIME, &timeout);
             timeout.tv_sec += 2;
-            printf("Thread %d: Locked account %d\n", teller_id, source_id);
+            printf("\033[92mThread %d: Locked account %d\033[0m\n", teller_id, source_id);
             usleep(100);
-            printf("Thread %d: Waiting for account %d\n", teller_id, destination_id);
+            printf("\033[94mThread %d: Waiting for account %d\033[0m\n", teller_id, destination_id);
             if (pthread_mutex_timedlock(&accounts[destination_id].lock, &timeout) == 0){
+                printf("\033[92mThread %d: Locked account %d\033[0m\n", teller_id, destination_id);
                 break;
             }
-            printf("Thread %d timed out while waiting to lock Account %d\n", teller_id, destination_id);
+            printf("\033[93mThread %d: Timed out while waiting to lock Account %d\033[0m\n", teller_id, destination_id);
             pthread_mutex_unlock(&accounts[source_id].lock);
-            usleep(rand() % 10000);
+            usleep(rand_r(seed) % 10000); // Random delay to prevent deadlock
             continue;
         }
-        printf("Thread %d timed out while waiting to lock Account %d\n", teller_id, source_id);
+        printf("\033[93mThread %d timed out while waiting to lock Account %d\033[0m\n", teller_id, source_id);
     }
-    // while (1) {
-    //     clock_gettime(CLOCK_REALTIME, &timeout);
-    //     timeout.tv_sec += 2;
-    //     int result = pthread_mutex_timedlock(&accounts[destination_id].lock, &timeout);
-    //     if (result == 0){
-    //         break;
-    //     }
-    //     printf("Thread %d timed out while waiting to lock Account %d\n", teller_id, destination_id);
-    // }
     
     if (accounts[source_id].balance < amount){
         pthread_mutex_unlock(&accounts[destination_id].lock);
         pthread_mutex_unlock(&accounts[source_id].lock);
+        update_progress();
         printf("\nAccount %d has an insufficient balance, transfer with Account %d cancelled\n", source_id, destination_id);
         return;
     }
@@ -133,7 +139,9 @@ void safe_transfer_timeout(int teller_id, int source_id, int destination_id, dou
     pthread_mutex_unlock(&accounts[destination_id].lock);
     pthread_mutex_unlock(&accounts[source_id].lock);
 
-    printf("Thread %d: Transfered $%.2f from Account %d to Account %d - Accounts %d and %d unlocked.\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
+    update_progress();
+
+    printf("\033[1mThread %d: Transfered $%.2f from Account %d to Account %d \033[96m- Accounts %d and %d unlocked.\033[0m\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
 }
 
 void* teller_thread(void* arg) {
@@ -149,7 +157,7 @@ void* teller_thread(void* arg) {
         if (TRANSFER_METHOD == 0){
             safe_transfer_ordered(teller_id, source_id, destination_id, amount);
         } else{
-            safe_transfer_timeout(teller_id, source_id, destination_id, amount);
+            safe_transfer_timeout(teller_id, &seed, source_id, destination_id, amount);
         }
 	}
     pthread_mutex_lock(&threads_executed_mutex);
@@ -161,12 +169,15 @@ void cleanup_mutexes() {
     for (int i = 0; i < NUM_ACCOUNTS; i++) {
         pthread_mutex_destroy(&accounts[i].lock);
     }
+    pthread_mutex_destroy(&threads_executed_mutex);
+    pthread_mutex_destroy(&last_progress_mutex);
 }
 
 int main(){
     printf("=== Phase 4: Deadlock Resolution Demo ===\n\n");
     initialize_accounts();
     pthread_mutex_init(&threads_executed_mutex, NULL);
+    pthread_mutex_init(&last_progress_mutex, NULL);
 	printf("Initial State:\n");
 	for (int i = 0; i < NUM_ACCOUNTS; i++) {
 		printf(" Account %d: $%.2f\n", i, accounts[i].balance);
@@ -192,19 +203,23 @@ int main(){
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    time_t start_time = time(NULL);
-    time_t timeout_elapsed = 0;
+    update_progress();
 
-    while (1){
+    while (1){ // Timer counting loop
         sleep(1);
-        timeout_elapsed = time(NULL) - start_time;
-        if (timeout_elapsed >= 5){
-            printf("\nPossible deadlock found, no progress for 5 seconds, program terminated...\n");
+        pthread_mutex_lock(&last_progress_mutex);
+        if ((time(NULL) - last_progress) >= 5){
+            printf("\n\033[1;91mTimeout error occured, no progress for 5 seconds, program terminated.\033[0m\n");
+            if (TRANSFER_METHOD == 1){
+                printf("\nLivelock has likely occurred.\n\n");
+            }
             exit(1);
         }
         if (threads_executed == NUM_THREADS){
+            pthread_mutex_unlock(&last_progress_mutex);
             break;
         }
+        pthread_mutex_unlock(&last_progress_mutex);
     }
 
 
@@ -243,7 +258,7 @@ int main(){
 		printf("\nNO RACE CONDITION DETECTED\n");
 	}
 
-	printf("Run program again to test for different results.\n");
+	printf("Run program again to test for different results.\n\n");
 
 	return 0;
 }
