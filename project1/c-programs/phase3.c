@@ -28,6 +28,9 @@ Account accounts[NUM_ACCOUNTS];
 int threads_executed = 0; // Track amount of threads that have finished executing
 pthread_mutex_t threads_executed_mutex; // Create mutex for threads_executed
 
+time_t last_progress;
+pthread_mutex_t last_progress_mutex;
+
 void initialize_accounts() {
     for (int i = 0; i < NUM_ACCOUNTS; i++) {
         accounts[i].account_id = i;
@@ -62,33 +65,48 @@ pthread_mutex_unlock(&accounts[to_id].lock);
 pthread_mutex_unlock(&accounts[from_id].lock);
 }
 
-int check_balance(int id, double amount){
-    if (accounts[id].balance >= amount){
-        return 0;
-    }
-    return 1;
-}
 
 // TODO 1: Implement complete transfer function
 // Use the example above as reference
 // Add balance checking (sufficient funds?)
 // Add error handling
-void transfer_deadlock(int from_id, int to_id, double amount){
-    pthread_mutex_lock(&accounts[from_id].lock);
-    printf("Thread %ld: Locked account %d\n", pthread_self(), from_id);
-    int result = check_balance(from_id, amount);
-    if (result != 0){
-        pthread_mutex_unlock(&accounts[from_id].lock);
-        printf("Account %d has an insufficient balance, transfer with Account %d cancelled", from_id, to_id);
+void transfer_deadlock(int source_id, int destination_id, double amount){
+    pthread_mutex_lock(&accounts[source_id].lock);
+
+    pthread_mutex_lock(&last_progress_mutex);
+    last_progress = time(NULL);
+    pthread_mutex_unlock(&last_progress_mutex);
+
+    printf("Thread %ld: Locked account %d\n", pthread_self(), source_id);
+    usleep(100);
+    printf("Thread %ld: Waiting for account %d\n", pthread_self(), destination_id);
+    pthread_mutex_lock(&accounts[destination_id].lock);
+
+    pthread_mutex_lock(&last_progress_mutex);
+    last_progress = time(NULL);
+    pthread_mutex_unlock(&last_progress_mutex);
+
+    if (accounts[source_id].balance < amount){
+        pthread_mutex_unlock(&accounts[source_id].lock);
+
+        pthread_mutex_lock(&last_progress_mutex);
+        last_progress = time(NULL);
+        pthread_mutex_unlock(&last_progress_mutex);
+
+        printf("\nAccount %d has an insufficient balance, transfer with Account %d cancelled\n", source_id, destination_id);
         return;
     }
-    usleep(100);
-    printf("Thread %ld: Waiting for account %d\n", pthread_self(), to_id);
-    pthread_mutex_lock(&accounts[to_id].lock);
-    accounts[from_id].balance -= amount;
-    accounts[to_id].balance += amount;
-    pthread_mutex_unlock(&accounts[to_id].lock);
-    pthread_mutex_unlock(&accounts[from_id].lock);
+    accounts[source_id].balance -= amount;
+    accounts[destination_id].balance += amount;
+    accounts[source_id].transaction_count++;
+    accounts[destination_id].transaction_count++;
+
+    pthread_mutex_unlock(&accounts[destination_id].lock);
+    pthread_mutex_unlock(&accounts[source_id].lock);
+
+    pthread_mutex_lock(&last_progress_mutex);
+    last_progress = time(NULL);
+    pthread_mutex_unlock(&last_progress_mutex);
 }
 
 // TODO 2: Create threads that will deadlock
@@ -111,7 +129,7 @@ void* teller_thread(void* arg) {
 		double amount = (rand_r(&seed) % 100) + 1;
 
 		transfer_deadlock(source_id, destination_id, amount);
-		printf("Teller %d: Transfered $%.2f from Account %d to Account %d\n", teller_id, amount, source_id, destination_id);
+		printf("\nTeller %d: Transfered $%.2f from Account %d to Account %d\n", teller_id, amount, source_id, destination_id);
 	}
     pthread_mutex_lock(&threads_executed_mutex);
     threads_executed ++;
@@ -123,6 +141,7 @@ void cleanup_mutexes() {
         pthread_mutex_destroy(&accounts[i].lock);
     }
 }
+
 
 int main(){
     printf("=== Phase 3: Create Deadlock Demo ===\n\n");
@@ -148,22 +167,26 @@ int main(){
 	for (int i = 0; i < NUM_THREADS; i++) { // Create threads
 		thread_ids[i] = i;
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]);
-		if (result == 1){
+		if (result != 0){
 			printf("Error when creating thread.\n");
 			exit(1);
 		}
 	}
-    time_t start_time = time(NULL); // Start timeout timer
-    time_t elapsed = 0;
+    // Start timeout timer
+    
+    pthread_mutex_lock(&last_progress_mutex);
+    last_progress = time(NULL);
+    pthread_mutex_unlock(&last_progress_mutex);
+
     while (1){ // Timer counting loop
         sleep(1);
-        elapsed = time(NULL) - start_time;
-        if (elapsed >= 5){
-            printf("\nPossible deadlock found, no progress for 5 seconds, program terminated...\n");
+        pthread_mutex_lock(&last_progress_mutex);
+        if ((time(NULL) - last_progress) >= 5){
+            printf("\nPossible deadlock found, no progress for 5 seconds, program terminated.\n");
             exit(1);
         }
+        pthread_mutex_unlock(&last_progress_mutex);
         if (threads_executed == NUM_THREADS){
-            printf("No deadlock found...\n");
             break;
         }
     }
@@ -171,7 +194,7 @@ int main(){
 
 	for (int i = 0; i < NUM_THREADS; i++) { // Join threads
 		result = pthread_join(threads[i], NULL);
-		if (result == 1){
+		if (result != 0){
 			printf("Error when joining thread.\n");
 			exit(1);
 		}
@@ -198,6 +221,7 @@ int main(){
 	} else{
 		printf("NO RACE CONDITION DETECTED\n");
 	}
+    printf("\n\nNo deadlock found.\n\n");
 	printf("Run program again to test for different results.\n");
 
 	return 0;
