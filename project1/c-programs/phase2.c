@@ -1,6 +1,10 @@
-// Liam Mason Coyle
-// CS 3502 Section W03
-// Project 1
+//	Liam Mason Coyle
+//	CS 3502 Section W03
+//	Project 1
+
+//  AI Assistance: Claude Sonnet 4.6 (Anthropic), used to debug code and for general reference
+//  Date accessed: February - March 2026
+//  URL: https://claude.ai
 
 #include <pthread.h>
 #include <stdio.h>
@@ -37,7 +41,7 @@ void initialize_accounts() {
     }
 }
 
-//Method to transfer money from one account to another, implementin mutex
+//Method to transfer money from one account to another, implementing mutex
 void transfer_safe(int teller_id, int source_id, int destination_id, double amount){
 	pthread_mutex_lock(&accounts[source_id].lock); // Lock source account
 	double source_balance = accounts[source_id].balance; // Read balance

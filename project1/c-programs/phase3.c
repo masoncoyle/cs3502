@@ -1,6 +1,10 @@
-// Liam Mason Coyle
-// CS 3502 Section W03
-// Project 1
+//  Liam Mason Coyle
+//  CS 3502 Section W03
+//  Project 1
+
+//  AI Assistance: Claude Sonnet 4.6 (Anthropic), used to debug code and for general reference
+//  Date accessed: February - March 2026
+//  URL: https://claude.ai
 
 #include <pthread.h>
 #include <stdio.h>
@@ -9,7 +13,6 @@
 #include <time.h>
 #include <errno.h>
 #include <string.h>
-
 
 #define NUM_ACCOUNTS 4
 #define NUM_THREADS 4
@@ -28,9 +31,10 @@ Account accounts[NUM_ACCOUNTS];
 int threads_executed = 0; // Track amount of threads that have finished executing
 pthread_mutex_t threads_executed_mutex; // Create mutex for threads_executed
 
-time_t last_progress;
-pthread_mutex_t last_progress_mutex;
+time_t last_progress; // Global variable to track the last point in time that threads made progress in the program
+pthread_mutex_t last_progress_mutex; // Define mutex for last_progress
 
+// Method to update last_progress with the current time
 void update_progress(){
     pthread_mutex_lock(&last_progress_mutex);
     last_progress = time(NULL);
@@ -48,46 +52,19 @@ void initialize_accounts() {
     }
 }
 
-// GIVEN: Conceptual example showing HOW deadlock occurs
-void transfer_deadlock_example(int from_id, int to_id, double amount) {
-// This code WILL cause deadlock!
 
-// Lock source account
-pthread_mutex_lock(&accounts[from_id].lock);
-printf("Thread %ld: Locked account %d\n", pthread_self(), from_id);
-
-// Simulate processing delay
-usleep(100);
-
-// Try to lock destination account
-printf("Thread %ld: Waiting for account %d\n", pthread_self(), to_id);
-pthread_mutex_lock(&accounts[to_id].lock); // DEADLOCK HERE!
-
-// Transfer (never reached if deadlocked)
-accounts[from_id].balance -= amount;
-accounts[to_id].balance += amount;
-
-pthread_mutex_unlock(&accounts[to_id].lock);
-pthread_mutex_unlock(&accounts[from_id].lock);
-}
-
-
-// TODO 1: Implement complete transfer function
-// Use the example above as reference
-// Add balance checking (sufficient funds?)
-// Add error handling
-void transfer_deadlock(int source_id, int destination_id, double amount){
+// Transfer method that leads to deadlock
+void transfer_deadlock(int teller_id, int source_id, int destination_id, double amount){
     pthread_mutex_lock(&accounts[source_id].lock);
-    printf("\033[92mThread %ld: Locked account %d\033[0m\n", pthread_self(), source_id);
-    usleep(100);
-    printf("\033[94mThread %ld: Waiting for account %d\033[0m\n", pthread_self(), destination_id);
+    printf("\033[92mThread %d: Locked account %d\033[0m\n", teller_id, source_id);
+    usleep(100); // Simulate processing delay
+    printf("\033[94mThread %d: Waiting for account %d\033[0m\n", teller_id, destination_id);
     pthread_mutex_lock(&accounts[destination_id].lock);
 
-    if (accounts[source_id].balance < amount){
+    if (accounts[source_id].balance < amount){ // Check if source account has sufficient balance for transfer
+        pthread_mutex_unlock(&accounts[destination_id].lock);
         pthread_mutex_unlock(&accounts[source_id].lock);
-
-        update_progress();
-
+        update_progress(); // Update last_progress after finishing transaction and unlocking both accounts
         printf("\nAccount %d has an insufficient balance, transfer with Account %d cancelled\n", source_id, destination_id);
         return;
     }
@@ -100,12 +77,9 @@ void transfer_deadlock(int source_id, int destination_id, double amount){
     pthread_mutex_unlock(&accounts[source_id].lock);
 
     update_progress();
+    printf("\033[1mThread %d: Transferred $%.2f from Account %d to Account %d \033[96m- Accounts %d and %d unlocked.\033[0m\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
 }
 
-// TODO 2: Create threads that will deadlock
-// Thread 1: transfer(0, 1, amount) // Locks 0, wants 1
-// Thread 2: transfer(1, 0, amount) // Locks 1, wants 0
-// Result: Circular wait!
 void* teller_thread(void* arg) {
 	int teller_id = *(int*)arg;
 
@@ -121,9 +95,7 @@ void* teller_thread(void* arg) {
 
 		double amount = (rand_r(&seed) % 100) + 1;
 
-		transfer_deadlock(source_id, destination_id, amount);
-        printf("\033[1mThread %d: Transfered $%.2f from Account %d to Account %d \033[96m- Accounts %d and %d unlocked.\033[0m\n", teller_id, amount, source_id, destination_id, source_id, destination_id);
-        
+		transfer_deadlock(teller_id, source_id, destination_id, amount); // Implement deadlock inducing transfer method
 	}
     pthread_mutex_lock(&threads_executed_mutex);
     threads_executed ++;
@@ -134,6 +106,8 @@ void cleanup_mutexes() {
     for (int i = 0; i < NUM_ACCOUNTS; i++) {
         pthread_mutex_destroy(&accounts[i].lock);
     }
+    pthread_mutex_destroy(&threads_executed_mutex);
+    pthread_mutex_destroy(&last_progress_mutex);
 }
 
 
@@ -143,6 +117,7 @@ int main(){
     initialize_accounts();
     
     pthread_mutex_init(&threads_executed_mutex, NULL); // Initialize threads_executed mutex
+    pthread_mutex_init(&last_progress_mutex, NULL); // Initialize last_progress mutex
 
 	printf("Initial State:\n");
 	for (int i = 0; i < NUM_ACCOUNTS; i++) {
@@ -162,69 +137,62 @@ int main(){
 		thread_ids[i] = i;
 		result = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]);
 		if (result != 0){
-			printf("Error when creating thread.\n");
+			printf("\nError when creating thread.\n");
 			exit(1);
 		}
 	}
-    // Start timeout timer
-    
-    update_progress();
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
-    while (1){ // Timer counting loop
-        sleep(1);
-        pthread_mutex_lock(&last_progress_mutex);
-        if ((time(NULL) - last_progress) >= 5){
-            printf("\n\033[1;91mPossible deadlock found, no progress for 5 seconds, program terminated.\033[0m\n\n");
-            exit(1);
+    // Start timeout timer
+    update_progress();
+    // Loop to print statement and exit program if deadlock occurs (no progress in 5 seconds)
+    while (1){
+        sleep(1); // Wait one second
+        pthread_mutex_lock(&last_progress_mutex); // Lock mutex
+        if ((time(NULL) - last_progress) >= 5){ // Check if 5 seconds has elapsed since last time progress was made
+            printf("\n\033[1;91mPossible deadlock found, no progress for 5 seconds, program terminated.\033[0m\n\n"); // Print that deadlock was detected
+            exit(1); // Exit if no progress
         }
-        pthread_mutex_unlock(&last_progress_mutex);
-        if (threads_executed == NUM_THREADS){
+        pthread_mutex_unlock(&last_progress_mutex); // Unlock mutex
+        if (threads_executed == NUM_THREADS){ // Exit loop if all threads completed their transactions
             break;
         }
+        // Repeat loop if 5 seconds has not elapsed
     }
 
 
-	for (int i = 0; i < NUM_THREADS; i++) { // Join threads
+	for (int i = 0; i < NUM_THREADS; i++) {
 		result = pthread_join(threads[i], NULL);
 		if (result != 0){
-			printf("Error when joining thread.\n");
+			printf("\nError when joining thread.\n");
 			exit(1);
 		}
 	}
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
     cleanup_mutexes();
     
 
 	printf("\n=== Final Results ===\n");
+    printf("\nTime: %.4f seconds\n\n", elapsed);
 
 	double actual_total = 0.0;
 
 	for (int i = 0; i < NUM_ACCOUNTS; i++) {
 		printf("Account %d: $%.2f (%d transactions)\n",
 			i, accounts[i].balance, accounts[i].transaction_count);
-		actual_total += accounts[i].balance;
+		    actual_total += accounts[i].balance;
 	}
-
-	printf("\nExpected total: $%.2f\n", expected_total);
+    printf("\nExpected total: $%.2f\n", expected_total);
 	printf("Actual total: $%.2f\n", actual_total);
 	printf("Difference: $%.2f\n", actual_total - expected_total);
 
-	if (expected_total != actual_total){
-		printf("RACE CONDITION DETECTED!\n");
-	} else{
-		printf("NO RACE CONDITION DETECTED\n");
-	}
-    printf("\n\nNo deadlock found.\n\n");
+    printf("\n\nNO DEADLOCK DETECTED\n\n");
+
 	printf("Run program again to test for different results.\n\n");
 
 	return 0;
 }
-
-
-// TODO 3: Implement deadlock detection
-// Add timeout counter in main()
-// If no progress for 5 seconds, report suspected deadlock
-// Reference: time(NULL) for simple timing
-
-// TODO 4: Document the Coffman conditions
-// In your report, identify WHERE each condition occurs
-// Create resource allocation graph showing circular wait

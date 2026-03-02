@@ -1,6 +1,10 @@
-// Liam Mason Coyle
-// CS 3502 Section W03
-// Project 1
+//	Liam Mason Coyle
+//	CS 3502 Section W03
+//	Project 1
+
+//  AI Assistance: Claude Sonnet 4.6 (Anthropic), used to debug code and for general reference
+//  Date accessed: February - March 2026
+//  URL: https://claude.ai
 
 #include <pthread.h>
 #include <stdio.h>
