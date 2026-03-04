@@ -16,9 +16,9 @@
 
 #define NUM_ACCOUNTS 4
 #define NUM_THREADS 4
-#define TRANSACTIONS_PER_THREAD 20
+#define TRANSACTIONS_PER_THREAD 2
 #define INITIAL_BALANCE 1000.0
-#define TRANSFER_METHOD 0 //Set to 0 to use Time Ordering or set to 1 to use Timeout Mechanism for Deadlock Resolution
+#define TRANSFER_METHOD 1 //Set to 0 to use Time Ordering or set to 1 to use Timeout Mechanism for Deadlock Resolution
 
 typedef struct {
     int account_id;
@@ -262,7 +262,7 @@ int main(){
 	printf("Actual total: $%.2f\n", actual_total);
 	printf("Difference: $%.2f\n", actual_total - expected_total);
 
-    printf("\n\nNO DEADLOCK DETECTED\n\n");
+    printf("\nNO DEADLOCK DETECTED\n\n");
 
 	printf("Run program again to test for different results.\n\n");
 
