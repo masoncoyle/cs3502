@@ -2,8 +2,8 @@
 
 ## Description
 A multi-threaded banking system built on Ubuntu using C programming language.
-This system is composed of accounts, transactions,
-threads acting as tellers/ATMs, and transfers.
+This system is composed of accounts, transactions, threads acting as tellers/ATMs, and transfers.
+Phase 1 and 3 demonstrate race conditions and deadlock. Phase 2 and 4 solve these issues.
 
 ## Requirements
 - GCC Compiler
